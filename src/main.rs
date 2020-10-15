@@ -1,7 +1,12 @@
+extern crate argparse;
+
 use std::io::{self, BufRead};
 use std::net::UdpSocket;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 use std::vec::Vec;
+
+use argparse::{ArgumentParser, StoreTrue, Store};
+
 
 // exnc:
 // echo - xxd - netcat
@@ -18,6 +23,7 @@ fn send_data(socket: UdpSocket, data: Vec::<u8>, destination_address: SocketAddr
     result
 }
 
+#[derive(Debug)]
 enum OperatingMode {
     InputIsHex,
     InputIsBinary
@@ -39,14 +45,67 @@ fn line_to_buffer(mode: OperatingMode, line: String)
     }
 }
 
+#[derive(Debug)]
+struct ExncOptions {
+    mode: OperatingMode,
+    dest: SocketAddr
+}
+
+fn get_cli_options() -> ExncOptions {
+    let mut ascii_hex = false;
+    let mut binary = true;
+    let mut dest = "127.0.0.1:6868".to_string();
+    {
+        let mut parser = ArgumentParser::new();
+        parser.set_description("Echo binary data to a UDP socket");
+        parser.refer(&mut ascii_hex)
+            .add_option(&["-a", "--hex"], StoreTrue,
+                        "Interpret input data as ASCII formatted hexadecimal bytes, where each newline creates a new message");
+        parser.refer(&mut binary)
+            .add_option(&["-b", "--binary"], StoreTrue,
+                        "Interpret input data as raw binary, forwarded directly to the socket");
+        parser.refer(&mut dest)
+            .add_option(&["-d", "--destination"], Store,
+                        "Destination address for the UDP data (formatted host_ip:port_number)");
+        parser.parse_args_or_exit();
+    }
+
+    // Check that the options are valid
+    if (ascii_hex && binary) {
+        // we can only have one of these
+        panic!("Cannot be in ASCII hex mode and binary mode at the same time");
+    }
+
+    let mode: OperatingMode;
+    if ascii_hex {
+        mode = OperatingMode::InputIsHex;
+    } else {
+        mode = OperatingMode::InputIsBinary;
+    }
+
+    let destination: SocketAddr = dest.parse().expect("invalid destination address specified, make sure it follows host_ip:port syntax");
+
+    let options = ExncOptions {
+        mode,
+        dest: destination
+    };
+
+    println!("Configured options: {:?}", options);
+    return options;
+}
+
 fn main() {
+
+    let options = get_cli_options();
+
     let data = line_to_buffer(OperatingMode::InputIsBinary, "test_buffer".to_string()).unwrap();
     println!("{:?}", data);
 
-    let dest: SocketAddr = "127.0.0.1:8080".parse().unwrap();
 
     let socket = UdpSocket::bind("127.0.0.1:45354").expect("unable to bind to UDP socket for sending data");
 
-    send_data(socket, data, dest);
+    send_data(socket, data, options.dest);
+
+
 
 }

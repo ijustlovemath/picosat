@@ -37,9 +37,9 @@ fn line_to_buffer(mode: OperatingMode, line: String, &mut buffer: &mut Vec::<u8>
         },
         OperatingMode::InputIsBinary => {
             //result = &Vec::<u8>::from(line.as_bytes());
-            let result = Vec::<u8>::from(line);
+            //let result = Vec::<u8>::from(line);
             *buffer = line.into();
-            Ok(result)
+            Ok((*buffer).to_vec())//result)
         },
         _ => Err("Unrecognized mode")
     }

@@ -14,11 +14,10 @@ use argparse::{ArgumentParser, StoreTrue, Store};
 fn send_data(socket: UdpSocket, data: &[u8], destination_address: SocketAddr) -> std::io::Result<()> {
     let result = socket.send_to(&data, &destination_address);
 
-    let result = match result {
+    match result {
         Ok(bytes) => Ok(()),
         Err(error) => panic!("Unable to send data to {:?} because {:?}", destination_address, error),
-    };
-    result
+    }
 }
 
 #[derive(Debug)]
@@ -121,7 +120,7 @@ fn get_cli_options() -> ExncOptions {
     };
 
     println!("Configured options: {:?}", options);
-    return options;
+    options
 }
 
 fn main() {

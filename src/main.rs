@@ -1,5 +1,3 @@
-extern crate argparse;
-
 use std::io::{self, BufRead};
 use std::net::UdpSocket;
 use std::net::SocketAddr;
@@ -13,7 +11,7 @@ use argparse::{ArgumentParser, StoreTrue, Store};
 // --ascii: expect input in newline-terminated hexadecimal strings, 0-9a-fA-F
 // --binary: direct binary stream as expected (until eof) to network port
 
-fn send_data(socket: UdpSocket, data: Vec::<u8>, destination_address: SocketAddr) -> std::io::Result<()> {
+fn send_data(socket: UdpSocket, data: &[u8], destination_address: SocketAddr) -> std::io::Result<()> {
     let result = socket.send_to(&data, &destination_address);
 
     let result = match result {
@@ -29,16 +27,18 @@ enum OperatingMode {
     InputIsBinary
 }
 
-fn line_to_buffer(mode: OperatingMode, line: String) 
+fn line_to_buffer(mode: OperatingMode, line: String, &mut buffer: &mut Vec::<u8>) 
     -> std::result::Result<Vec::<u8>, &'static str> {
     match mode {
         OperatingMode::InputIsHex => {
             let result = Vec::<u8>::new();
+            //*buffer = Vec::<u8>::new();
             Ok(result)
         },
         OperatingMode::InputIsBinary => {
             //result = &Vec::<u8>::from(line.as_bytes());
             let result = Vec::<u8>::from(line);
+            *buffer = line.into();
             Ok(result)
         },
         _ => Err("Unrecognized mode")
@@ -54,7 +54,7 @@ struct ExncOptions {
 
 fn setup_mode(ascii_hex: bool, binary: bool) -> OperatingMode {
     // Check that the options are valid
-    if (ascii_hex && binary) {
+    if ascii_hex && binary {
         // we can only have one of these
         panic!("Cannot be in ASCII hex mode and binary mode at the same time");
     }
@@ -62,28 +62,25 @@ fn setup_mode(ascii_hex: bool, binary: bool) -> OperatingMode {
     /* Checking only ascii_hex here has the effect of making --binary the default
      * even when nothing was specified on the command line.
      */
-    let mode: OperatingMode;
     if ascii_hex {
-        mode = OperatingMode::InputIsHex;
+        OperatingMode::InputIsHex
     } else {
-        mode = OperatingMode::InputIsBinary;
+        OperatingMode::InputIsBinary
     }
-    return mode;
 }
 
-fn setup_dest_address(dest: String) -> SocketAddr {
+fn setup_dest_address(dest: &str) -> SocketAddr {
     // Check the destination address
-    let destination: SocketAddr = dest.parse().expect("invalid destination address specified, make sure it follows host_ip:port syntax");
-    return destination;
+    // Need the type annotation for it to know how to parse()
+    dest.parse().expect("invalid destination address specified, make sure it follows host_ip:port syntax")
 }
 
-fn setup_source_socket(port: String) -> UdpSocket {
+fn setup_source_socket(port: &str) -> UdpSocket {
     let port: u16 = port.parse().expect("invalid port specified, must be an unsigned 16-bit integer (0-65535)");
     let addrs = [
         SocketAddr::from(([127,0,0,1], port)),
     ];
-    let sock = UdpSocket::bind(&addrs[..]).expect("unable to bind to UDP socket for sending data");
-    return sock;
+    UdpSocket::bind(&addrs[..]).expect("unable to bind to UDP socket for sending data")
 }
 
 fn get_cli_options() -> ExncOptions {
@@ -112,9 +109,9 @@ fn get_cli_options() -> ExncOptions {
 
     let mode = setup_mode(ascii_hex, binary);
 
-    let destination = setup_dest_address(dest);
+    let destination = setup_dest_address(&dest);
 
-    let sock = setup_source_socket(port);
+    let sock = setup_source_socket(&port);
 
     let options = ExncOptions {
         mode,
@@ -130,9 +127,11 @@ fn main() {
 
     let options = get_cli_options();
 
-    let data = line_to_buffer(OperatingMode::InputIsBinary, "test_buffer".to_string()).unwrap();
+    let mut buffer = vec![0; 1024];
+
+    let data = line_to_buffer(OperatingMode::InputIsBinary, "test_buffer".to_string(), &mut buffer).unwrap();
     println!("{:?}", data);
 
-    send_data(options.sock, data, options.dest);
+    send_data(options.sock, &data, options.dest);
 
 }

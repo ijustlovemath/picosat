@@ -52,13 +52,16 @@ struct ExncOptions {
     sock: UdpSocket
 }
 
-fn check_mode(ascii_hex: bool, binary: bool) -> OperatingMode {
+fn setup_mode(ascii_hex: bool, binary: bool) -> OperatingMode {
     // Check that the options are valid
     if (ascii_hex && binary) {
         // we can only have one of these
         panic!("Cannot be in ASCII hex mode and binary mode at the same time");
     }
 
+    /* Checking only ascii_hex here has the effect of making --binary the default
+     * even when nothing was specified on the command line.
+     */
     let mode: OperatingMode;
     if ascii_hex {
         mode = OperatingMode::InputIsHex;
@@ -68,14 +71,13 @@ fn check_mode(ascii_hex: bool, binary: bool) -> OperatingMode {
     return mode;
 }
 
-fn check_dest_address(dest: String) -> SocketAddr {
+fn setup_dest_address(dest: String) -> SocketAddr {
     // Check the destination address
     let destination: SocketAddr = dest.parse().expect("invalid destination address specified, make sure it follows host_ip:port syntax");
     return destination;
 }
 
-fn check_source_socket(port: String) -> UdpSocket {
-    // check the source port
+fn setup_source_socket(port: String) -> UdpSocket {
     let port: u16 = port.parse().expect("invalid port specified, must be an unsigned 16-bit integer (0-65535)");
     let addrs = [
         SocketAddr::from(([127,0,0,1], port)),
@@ -85,6 +87,7 @@ fn check_source_socket(port: String) -> UdpSocket {
 }
 
 fn get_cli_options() -> ExncOptions {
+    /* Defaults listed here; booleans must be false! */
     let mut ascii_hex = false;
     let mut binary = false;
     let mut dest = "127.0.0.1:6868".to_string();
@@ -107,11 +110,11 @@ fn get_cli_options() -> ExncOptions {
         parser.parse_args_or_exit();
     }
 
-    let mode = check_mode(ascii_hex, binary);
+    let mode = setup_mode(ascii_hex, binary);
 
-    let destination = check_dest_address(dest);
+    let destination = setup_dest_address(dest);
 
-    let sock = check_source_socket(port);
+    let sock = setup_source_socket(port);
 
     let options = ExncOptions {
         mode,

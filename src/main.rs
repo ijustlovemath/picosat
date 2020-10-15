@@ -27,7 +27,7 @@ enum OperatingMode {
     InputIsBinary
 }
 
-fn line_to_buffer(mode: OperatingMode, line: String, &mut buffer: &mut Vec::<u8>) 
+fn line_to_buffer(mode: OperatingMode, line: String, buffer: &mut [u8]) 
     -> std::result::Result<Vec::<u8>, &'static str> {
     match mode {
         OperatingMode::InputIsHex => {
@@ -38,8 +38,9 @@ fn line_to_buffer(mode: OperatingMode, line: String, &mut buffer: &mut Vec::<u8>
         OperatingMode::InputIsBinary => {
             //result = &Vec::<u8>::from(line.as_bytes());
             //let result = Vec::<u8>::from(line);
+            //*buffer = Vec::<u8>::from(line);
             *buffer = line.into();
-            Ok((*buffer).to_vec())//result)
+            Ok(buffer.to_vec())//result)
         },
         _ => Err("Unrecognized mode")
     }

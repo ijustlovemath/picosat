@@ -2,6 +2,7 @@ use std::io::{self, BufRead};
 use std::net::UdpSocket;
 use std::net::SocketAddr;
 use std::vec::Vec;
+use std::iter::Iterator;
 
 use argparse::{ArgumentParser, StoreTrue, Store};
 use faster_hex::hex_decode;
@@ -37,16 +38,13 @@ fn line_to_buffer(mode: &OperatingMode, line: &[u8], buffer: &mut Vec<u8>)
     -> std::result::Result<Vec<u8>, ExncError> {
     match mode {
         OperatingMode::InputIsHex => {
+            // buffer needs to be exactly half the size of the line, use rshift for speed + correctness
             buffer.resize(line.len() >> 1, 0);
-            println!("line contents: [#{}] {:x?}", line.len(), line);
-            println!("buffer contents: [#{}] {:x?}", buffer.len(), buffer);
             match hex_decode(line, buffer) {
                 Ok(_result) => {
-                    println!("decoded line {:x?}", buffer);
-                    Ok(buffer.to_vec())
+                    Ok(buffer.to_vec()) // TODO: just use Ok(())
                 },
                 Err(_error) => {
-                    println!("{:?}", _error);
                     Err(ExncError::HexDecodeError)
                 }
             } 
@@ -140,17 +138,23 @@ fn get_cli_options() -> ExncOptions {
     options
 }
 
-fn process_lines(options: &ExncOptions) {
+fn process_stdin(options: &ExncOptions) {
     let stdin = io::stdin();
-    let mut buffer = vec![0; 512];//Vec::<u8>::with_capacity(65535); /* TODO: max this a named constant, max udp packet size */
-    for line in stdin.lock().lines() { // TODO: abstract this to any line iterable
+    process_lines(options, stdin.lock().lines());
+}
+
+fn process_lines<T: BufRead + Iterator>(options: &ExncOptions, lines: T) {
+    //let stdin = io::stdin();
+    let mut buffer = vec![0; 1];//Vec::<u8>::with_capacity(65535); /* TODO: max this a named constant, max udp packet size */
+    for line in lines { // TODO: abstract this to any line iterable
 //        println!("{:?}", line.unwrap().as_bytes());
         match line_to_buffer(&options.mode, line.unwrap().as_bytes(), &mut buffer) {
             Ok(_) => {
                 send_data(&options.sock, &buffer, &options.dest);
                 buffer.clear();
             },
-            Err(_) => {
+            Err(error) => {
+                println!("[ERROR] {:?}", error);
                 continue;
             }
         }
@@ -173,9 +177,8 @@ fn main() {
     let ascii = line_to_buffer(&OperatingMode::InputIsHex, b"ff00ffe", &mut asciibuffer);
     assert_eq!(ascii, Err(ExncError::HexDecodeError));
 
-    process_lines(&options);
+    process_stdin(&options);
 
     send_data(&options.sock, &data, &options.dest);
-
 
 }

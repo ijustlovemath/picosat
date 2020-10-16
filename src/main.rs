@@ -3,6 +3,7 @@ use std::net::UdpSocket;
 use std::net::SocketAddr;
 use std::vec::Vec;
 use std::iter::Iterator;
+use std::result::Result;
 
 use argparse::{ArgumentParser, StoreTrue, Store};
 use faster_hex::hex_decode;
@@ -35,7 +36,7 @@ enum ExncError {
 }
 
 fn line_to_buffer(mode: &OperatingMode, line: &[u8], buffer: &mut Vec<u8>) 
-    -> std::result::Result<Vec<u8>, ExncError> {
+    -> Result<Vec<u8>, ExncError> {
     match mode {
         OperatingMode::InputIsHex => {
             // buffer needs to be exactly half the size of the line, use rshift for speed + correctness
@@ -137,17 +138,28 @@ fn get_cli_options() -> ExncOptions {
     println!("Configured options: {:?}", options);
     options
 }
-
+// TODO: abstract out to BufRead! so we can use this same code for files >:)
 fn process_stdin(options: &ExncOptions) {
     let stdin = io::stdin();
-    process_lines(options, stdin.lock().lines());
+    match options.mode {
+        OperationMode::InputIsHex => {
+            process_lines(options, stdin.lock().lines());
+        },
+        OperationMode::InputIsBinary => {
+            let mut buffer = Vec::new();
+            stdin.read_to_end(&mut buffer)?;
+            let lines = [buffer];
+            // this is not going to work...
+            process_lines(options, lines.iter());
+
+        }
+    }
 }
 
-fn process_lines<T: BufRead + Iterator>(options: &ExncOptions, lines: T) {
+fn process_lines<T: Iterator<Item = std::io::Result<String>>>(options: &ExncOptions, lines: T) {
     //let stdin = io::stdin();
     let mut buffer = vec![0; 1];//Vec::<u8>::with_capacity(65535); /* TODO: max this a named constant, max udp packet size */
     for line in lines { // TODO: abstract this to any line iterable
-//        println!("{:?}", line.unwrap().as_bytes());
         match line_to_buffer(&options.mode, line.unwrap().as_bytes(), &mut buffer) {
             Ok(_) => {
                 send_data(&options.sock, &buffer, &options.dest);

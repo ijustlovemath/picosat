@@ -148,7 +148,22 @@ fn process_stdin(options: &ExncOptions) {
         OperatingMode::InputIsBinary => {
             let mut contents = Vec::new();
             let mut buffer = Vec::new();
-            stdin.lock().read_to_end(&mut contents);
+            //stdin.lock().read_to_end(&mut contents);
+            loop {
+                match stdin.lock().read_until(0, &mut contents) {
+                    Ok(bytes_read) => {
+                        if bytes_read > 0 {
+                            continue;
+                        } else {
+                            break;
+                        }
+                    },
+                    Err(error) => {
+                        println!("{:?}", error);
+                        break;
+                    }
+                }
+            }
             process_line(options, &contents, &mut buffer); 
 
         }

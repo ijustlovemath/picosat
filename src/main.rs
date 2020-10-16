@@ -4,13 +4,14 @@ use std::net::SocketAddr;
 use std::vec::Vec;
 
 use argparse::{ArgumentParser, StoreTrue, Store};
-
+use faster_hex::hex_decode;
 
 // exnc:
 // echo - xxd - netcat
 // --ascii: expect input in newline-terminated hexadecimal strings, 0-9a-fA-F
 // --binary: direct binary stream as expected (until eof) to network port
 
+// if it fails should we bail? I think so because this is a core functionality
 fn send_data(socket: UdpSocket, data: &[u8], destination_address: SocketAddr) -> std::io::Result<()> {
     let result = socket.send_to(&data, &destination_address);
 
@@ -26,13 +27,22 @@ enum OperatingMode {
     InputIsBinary
 }
 
-fn line_to_buffer(mode: OperatingMode, line: String, buffer: &mut [u8]) 
-    -> std::result::Result<Vec::<u8>, &'static str> {
+#[derive(Debug)]
+enum ExncError {
+    HexDecodeError,
+    UnrecognizedModeError,
+}
+
+fn line_to_buffer(mode: OperatingMode, line: &[u8], buffer: &mut Vec<u8>) 
+    -> std::result::Result<Vec<u8>, ExncError> {
     match mode {
         OperatingMode::InputIsHex => {
-            let result = Vec::<u8>::new();
-            //*buffer = Vec::<u8>::new();
-            Ok(result)
+            match hex_decode(line, buffer) {
+                Ok(_result) => {
+                    Ok(buffer.to_vec())
+                },
+                Err(_error) => Err(ExncError::HexDecodeError)
+            } 
         },
         OperatingMode::InputIsBinary => {
             //result = &Vec::<u8>::from(line.as_bytes());
@@ -41,7 +51,7 @@ fn line_to_buffer(mode: OperatingMode, line: String, buffer: &mut [u8])
             *buffer = line.into();
             Ok(buffer.to_vec())//result)
         },
-        _ => Err("Unrecognized mode")
+        _ => Err(ExncError::UnrecognizedModeError)
     }
 }
 
@@ -129,8 +139,15 @@ fn main() {
 
     let mut buffer = vec![0; 1024];
 
-    let data = line_to_buffer(OperatingMode::InputIsBinary, "test_buffer".to_string(), &mut buffer).unwrap();
+    let data = line_to_buffer(OperatingMode::InputIsBinary, b"test_buffer", &mut buffer).unwrap();
     println!("{:?}", data);
+
+    let mut asciibuffer = vec![0; 1024];
+    let ascii = line_to_buffer(OperatingMode::InputIsHex, b"should fail", &mut asciibuffer).unwrap_err();
+    assert_eq!(ascii, Err(ExncError::HexDecodeError));
+
+    let ascii = line_to_buffer(OperatingMode::InputIsHex, b"ff00ffe", &mut asciibuffer).unwrap_err();
+    assert_eq!(ascii, Err(ExncError::HexDecodeError));
 
     send_data(options.sock, &data, options.dest);
 

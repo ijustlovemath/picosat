@@ -12,7 +12,7 @@ use faster_hex::hex_decode;
 // --binary: direct binary stream as expected (until eof) to network port
 
 // if it fails should we bail? I think so because this is a core functionality
-fn send_data(socket: UdpSocket, data: &[u8], destination_address: SocketAddr) -> std::io::Result<()> {
+fn send_data(socket: &UdpSocket, data: &[u8], destination_address: &SocketAddr) -> std::io::Result<()> {
     let result = socket.send_to(&data, &destination_address);
 
     match result {
@@ -27,21 +27,28 @@ enum OperatingMode {
     InputIsBinary
 }
 
-#[derive(Debug)]
+#[derive(Debug,PartialEq)]
 enum ExncError {
     HexDecodeError,
     UnrecognizedModeError,
 }
 
-fn line_to_buffer(mode: OperatingMode, line: &[u8], buffer: &mut Vec<u8>) 
+fn line_to_buffer(mode: &OperatingMode, line: &[u8], buffer: &mut Vec<u8>) 
     -> std::result::Result<Vec<u8>, ExncError> {
     match mode {
         OperatingMode::InputIsHex => {
+            buffer.resize(line.len() >> 1, 0);
+            println!("line contents: [#{}] {:x?}", line.len(), line);
+            println!("buffer contents: [#{}] {:x?}", buffer.len(), buffer);
             match hex_decode(line, buffer) {
                 Ok(_result) => {
+                    println!("decoded line {:x?}", buffer);
                     Ok(buffer.to_vec())
                 },
-                Err(_error) => Err(ExncError::HexDecodeError)
+                Err(_error) => {
+                    println!("{:?}", _error);
+                    Err(ExncError::HexDecodeError)
+                }
             } 
         },
         OperatingMode::InputIsBinary => {
@@ -133,22 +140,42 @@ fn get_cli_options() -> ExncOptions {
     options
 }
 
+fn process_lines(options: &ExncOptions) {
+    let stdin = io::stdin();
+    let mut buffer = vec![0; 512];//Vec::<u8>::with_capacity(65535); /* TODO: max this a named constant, max udp packet size */
+    for line in stdin.lock().lines() { // TODO: abstract this to any line iterable
+//        println!("{:?}", line.unwrap().as_bytes());
+        match line_to_buffer(&options.mode, line.unwrap().as_bytes(), &mut buffer) {
+            Ok(_) => {
+                send_data(&options.sock, &buffer, &options.dest);
+                buffer.clear();
+            },
+            Err(_) => {
+                continue;
+            }
+        }
+    }
+}
+
 fn main() {
 
     let options = get_cli_options();
 
-    let mut buffer = vec![0; 1024];
+    let mut buffer = Vec::with_capacity(1024);//vec![0; 1024];
 
-    let data = line_to_buffer(OperatingMode::InputIsBinary, b"test_buffer", &mut buffer).unwrap();
+    let data = line_to_buffer(&OperatingMode::InputIsBinary, b"test_buffer", &mut buffer).unwrap();
     println!("{:?}", data);
 
-    let mut asciibuffer = vec![0; 1024];
-    let ascii = line_to_buffer(OperatingMode::InputIsHex, b"should fail", &mut asciibuffer).unwrap_err();
+    let mut asciibuffer = Vec::with_capacity(1024);//vec![0; 1024];
+    let ascii = line_to_buffer(&OperatingMode::InputIsHex, b"should fail", &mut asciibuffer);
     assert_eq!(ascii, Err(ExncError::HexDecodeError));
 
-    let ascii = line_to_buffer(OperatingMode::InputIsHex, b"ff00ffe", &mut asciibuffer).unwrap_err();
+    let ascii = line_to_buffer(&OperatingMode::InputIsHex, b"ff00ffe", &mut asciibuffer);
     assert_eq!(ascii, Err(ExncError::HexDecodeError));
 
-    send_data(options.sock, &data, options.dest);
+    process_lines(&options);
+
+    send_data(&options.sock, &data, &options.dest);
+
 
 }

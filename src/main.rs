@@ -89,7 +89,7 @@ fn setup_dest_address(dest: &str) -> SocketAddr {
 }
 
 fn setup_source_socket(port: &str) -> UdpSocket {
-    let port: u16 = port.parse().expect("invalid port specified, must be an unsigned 16-bit integer (0-65535)");
+    let port = port.parse().expect("invalid port specified, must be an unsigned 16-bit integer (0-65535)");
     let addrs = [
         SocketAddr::from(([127,0,0,1], port)),
     ];

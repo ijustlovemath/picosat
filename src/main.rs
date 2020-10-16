@@ -142,28 +142,32 @@ fn get_cli_options() -> ExncOptions {
 fn process_stdin(options: &ExncOptions) {
     let stdin = io::stdin();
     match options.mode {
-        OperationMode::InputIsHex => {
+        OperatingMode::InputIsHex => {
             process_lines(options, stdin.lock().lines());
         },
-        OperationMode::InputIsBinary => {
+        OperatingMode::InputIsBinary => {
+            let mut contents = Vec::new();
             let mut buffer = Vec::new();
-            stdin.read_to_end(&mut buffer)?;
-            let lines = [buffer];
-            // this is not going to work...
-            process_lines(options, lines.iter());
+            stdin.lock().read_to_end(&mut contents);
+            process_line(options, &contents, &mut buffer); 
 
         }
     }
 }
 
+fn process_line(options: &ExncOptions, line: &[u8], buffer: &mut Vec<u8>) -> Result<Vec<u8>, ExncError> {
+    line_to_buffer(&options.mode, line, buffer)?;
+    send_data(&options.sock, &buffer, &options.dest);
+    buffer.clear();
+    Ok(buffer.to_vec())
+}
+
 fn process_lines<T: Iterator<Item = std::io::Result<String>>>(options: &ExncOptions, lines: T) {
     //let stdin = io::stdin();
-    let mut buffer = vec![0; 1];//Vec::<u8>::with_capacity(65535); /* TODO: max this a named constant, max udp packet size */
+    let mut buffer = Vec::new();//Vec::<u8>::with_capacity(65535); /* TODO: max this a named constant, max udp packet size */
     for line in lines { // TODO: abstract this to any line iterable
-        match line_to_buffer(&options.mode, line.unwrap().as_bytes(), &mut buffer) {
+        match process_line(options, line.unwrap().as_bytes(), &mut buffer) {
             Ok(_) => {
-                send_data(&options.sock, &buffer, &options.dest);
-                buffer.clear();
             },
             Err(error) => {
                 println!("[ERROR] {:?}", error);

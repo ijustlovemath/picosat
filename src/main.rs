@@ -14,11 +14,11 @@ use faster_hex::hex_decode;
 // --binary: direct binary stream as expected (until eof) to network port
 
 // if it fails should we bail? I think so because this is a core functionality
-fn send_data(socket: &UdpSocket, data: &[u8], destination_address: &SocketAddr) -> std::io::Result<()> {
+fn send_data(socket: &UdpSocket, data: &[u8], destination_address: &SocketAddr) {
     let result = socket.send_to(&data, &destination_address);
 
     match result {
-        Ok(bytes) => Ok(()),
+        Ok(_bytes_sent) => {},
         Err(error) => panic!("Unable to send data to {:?} because {:?}", destination_address, error),
     }
 }
@@ -36,14 +36,14 @@ enum ExncError {
 }
 
 fn line_to_buffer(mode: &OperatingMode, line: &[u8], buffer: &mut Vec<u8>) 
-    -> Result<Vec<u8>, ExncError> {
+    -> Result<(), ExncError> {
     match mode {
         OperatingMode::InputIsHex => {
             // buffer needs to be exactly half the size of the line, use rshift for speed + correctness
             buffer.resize(line.len() >> 1, 0);
             match hex_decode(line, buffer) {
                 Ok(_result) => {
-                    Ok(buffer.to_vec()) // TODO: just use Ok(())
+                    Ok(()) 
                 },
                 Err(_error) => {
                     Err(ExncError::HexDecodeError)
@@ -51,11 +51,8 @@ fn line_to_buffer(mode: &OperatingMode, line: &[u8], buffer: &mut Vec<u8>)
             } 
         },
         OperatingMode::InputIsBinary => {
-            //result = &Vec::<u8>::from(line.as_bytes());
-            //let result = Vec::<u8>::from(line);
-            //*buffer = Vec::<u8>::from(line);
             *buffer = line.into();
-            Ok(buffer.to_vec())//result)
+            Ok(())
         },
         _ => Err(ExncError::UnrecognizedModeError)
     }
@@ -65,7 +62,7 @@ fn line_to_buffer(mode: &OperatingMode, line: &[u8], buffer: &mut Vec<u8>)
 struct ExncOptions {
     mode: OperatingMode,
     dest: SocketAddr,
-    sock: UdpSocket
+    sock: UdpSocket,
 }
 
 fn setup_mode(ascii_hex: bool, binary: bool) -> OperatingMode {
@@ -138,78 +135,92 @@ fn get_cli_options() -> ExncOptions {
     println!("Configured options: {:?}", options);
     options
 }
-// TODO: abstract out to BufRead! so we can use this same code for files >:)
+
+fn drain_into<T: BufRead>(mut source: T, sink: &mut Vec<u8>) {
+    loop {
+        match source.read_until(0, sink) {
+            Ok(bytes_read) => {
+                if bytes_read > 0 {
+                    continue;
+                } else {
+                    break;
+                }
+            },
+            Err(error) => {
+                println!("[ERROR] drain failed: {:?}", error);
+                break;
+            }
+        }
+    }
+}
+
 fn process_stdin(options: &ExncOptions) {
     let stdin = io::stdin();
+    process_file(options, stdin.lock());
+}
+
+fn process_file<T: BufRead>(options: &ExncOptions, source: T) {
     match options.mode {
         OperatingMode::InputIsHex => {
-            process_lines(options, stdin.lock().lines());
+            process_lines(options, source.lines());
         },
         OperatingMode::InputIsBinary => {
             let mut contents = Vec::new();
             let mut buffer = Vec::new();
-            //stdin.lock().read_to_end(&mut contents);
-            loop {
-                match stdin.lock().read_until(0, &mut contents) {
-                    Ok(bytes_read) => {
-                        if bytes_read > 0 {
-                            continue;
-                        } else {
-                            break;
-                        }
-                    },
-                    Err(error) => {
-                        println!("{:?}", error);
-                        break;
-                    }
-                }
-            }
-            process_line(options, &contents, &mut buffer); 
+            drain_into(source, &mut contents);
+            match process_line(options, &contents, &mut buffer) {
+                Ok(_) => {},
+                Err(_impossible) => {
+                    // This shouldn't happen because when you're operating in binary mode, the only thing we do that
+                    // can fail is draining the source file, but those errors are handled within the drain function
+                    println!("The impossible happened! Also, if you see this, scold me for having bad software design skills");
+                }   
+            } 
 
         }
     }
 }
 
-fn process_line(options: &ExncOptions, line: &[u8], buffer: &mut Vec<u8>) -> Result<Vec<u8>, ExncError> {
+fn process_line(options: &ExncOptions, line: &[u8], buffer: &mut Vec<u8>) -> Result<(), ExncError> {
     line_to_buffer(&options.mode, line, buffer)?;
     send_data(&options.sock, &buffer, &options.dest);
     buffer.clear();
-    Ok(buffer.to_vec())
+    Ok(())
 }
 
 fn process_lines<T: Iterator<Item = std::io::Result<String>>>(options: &ExncOptions, lines: T) {
-    //let stdin = io::stdin();
-    let mut buffer = Vec::new();//Vec::<u8>::with_capacity(65535); /* TODO: max this a named constant, max udp packet size */
-    for line in lines { // TODO: abstract this to any line iterable
+    let mut buffer = Vec::new();
+    for line in lines { 
         match process_line(options, line.unwrap().as_bytes(), &mut buffer) {
-            Ok(_) => {
-            },
+            Ok(_) => {}, // TODO: is this the right pattern?
             Err(error) => {
-                println!("[ERROR] {:?}", error);
+                println!("[ERROR] {:?}, processing next line...", error);
                 continue;
             }
         }
     }
 }
 
+fn test() {
+    let mut buffer = Vec::new();
+
+    let _result = line_to_buffer(&OperatingMode::InputIsBinary, b"test_buffer", &mut buffer);
+    assert_eq!(buffer, [116, 101, 115, 116, 95, 98, 117, 102, 102, 101, 114]);
+
+    let mut asciibuffer = Vec::new();
+    let result = line_to_buffer(&OperatingMode::InputIsHex, b"should fail", &mut asciibuffer);
+    assert_eq!(result, Err(ExncError::HexDecodeError));
+
+    let result = line_to_buffer(&OperatingMode::InputIsHex, b"ff00ffe", &mut asciibuffer);
+    assert_eq!(result, Err(ExncError::HexDecodeError));
+
+}
+
+fn process_options(options: &ExncOptions) {
+    
+}
+
 fn main() {
-
     let options = get_cli_options();
-
-    let mut buffer = Vec::with_capacity(1024);//vec![0; 1024];
-
-    let data = line_to_buffer(&OperatingMode::InputIsBinary, b"test_buffer", &mut buffer).unwrap();
-    println!("{:?}", data);
-
-    let mut asciibuffer = Vec::with_capacity(1024);//vec![0; 1024];
-    let ascii = line_to_buffer(&OperatingMode::InputIsHex, b"should fail", &mut asciibuffer);
-    assert_eq!(ascii, Err(ExncError::HexDecodeError));
-
-    let ascii = line_to_buffer(&OperatingMode::InputIsHex, b"ff00ffe", &mut asciibuffer);
-    assert_eq!(ascii, Err(ExncError::HexDecodeError));
-
     process_stdin(&options);
-
-    send_data(&options.sock, &data, &options.dest);
-
 }

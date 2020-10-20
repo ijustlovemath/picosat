@@ -183,7 +183,9 @@ fn process_file<T: BufRead>(options: &ExncOptions, source: T) {
 
 fn process_line(options: &ExncOptions, line: &[u8], buffer: &mut Vec<u8>) -> Result<(), ExncError> {
     line_to_buffer(&options.mode, line, buffer)?;
-    send_data(&options.sock, &buffer, &options.dest);
+    for chunk in buffer.chunks(512) {
+        send_data(&options.sock, &chunk, &options.dest);
+    }
     buffer.clear();
     Ok(())
 }
